@@ -32,6 +32,7 @@ import {Map} from "@ofModel/map";
 import {CardService} from "@ofServices/card.service";
 import {EmptyLightCards} from "@ofActions/light-card.actions";
 import {ClearCard} from "@ofActions/card.actions";
+import { buildConfigSelector } from '@ofStore/selectors/config.selectors';
 
 /**
  * Management of the authentication of the current user
@@ -117,7 +118,7 @@ export class AuthenticationEffects {
         );
 
     private resetState() {
-        AuthenticationService.clearAuthenticationInformation();
+        this.authService.clearAuthenticationInformation();
         this.cardService.unsubscribeCardOperation();
     }
 
@@ -155,7 +156,7 @@ export class AuthenticationEffects {
     RejectLogInAttempt: Observable<AuthenticationActions> =
         this.actions$.pipe(ofType(AuthenticationActionTypes.RejectLogIn),
             tap(() => {
-                AuthenticationService.clearAuthenticationInformation();
+                this.authService.clearAuthenticationInformation();
             }),
             map(action => new AcceptLogOut()));
 
@@ -181,7 +182,9 @@ export class AuthenticationEffects {
             .pipe(
                 ofType(AuthenticationActionTypes.CheckAuthenticationStatus),
                 switchMap(() => {
-                    return this.authService.checkAuthentication(AuthenticationService.extractToken())
+                    const tmp = this.authService.extractToken();
+                    console.log(`The token is ${tmp}`);
+                    return this.authService.checkAuthentication(tmp)
                         .pipe(catchError(() => of(null)));
 
                 }),
@@ -200,8 +203,8 @@ export class AuthenticationEffects {
                                 MessageLevel.ERROR,
                                 new I18n('login.error.token.invalid'))));
                         } else {
-                            if (!AuthenticationService.isExpirationDateOver()) {
-                                const authInfo = AuthenticationService.extractIdentificationInformation();
+                            if (!this.authService.isExpirationDateOver()) {
+                                const authInfo = this.authService.extractIdentificationInformation();
                                 return this.authService.loadUserData(authInfo)
                                     .pipe(
                                         map(auth => new AcceptLogIn(auth))
@@ -248,7 +251,7 @@ export class AuthenticationEffects {
     }
 
     handleRejectedLogin(errorMsg: Message): AuthenticationActions {
-        AuthenticationService.clearAuthenticationInformation();
+        this.authService.clearAuthenticationInformation();
         return new RejectLogIn({error: errorMsg});
 
     }

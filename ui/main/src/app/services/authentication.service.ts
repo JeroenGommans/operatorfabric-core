@@ -11,14 +11,15 @@ import {Observable, of, throwError} from 'rxjs';
 import {catchError, map, switchMap, tap} from 'rxjs/operators';
 import {Guid} from 'guid-typescript';
 import {PayloadForSuccessfulAuthentication} from '@ofActions/authentication.actions';
-import {environment} from "@env/environment";
-import {GuidService} from "@ofServices/guid.service";
-import {AppState} from "@ofStore/index";
-import {Store} from "@ngrx/store";
-import {buildConfigSelector} from "@ofSelectors/config.selectors";
-import * as jwt_decode from "jwt-decode";
-import * as _ from "lodash";
-import {User} from "@ofModel/user.model";
+import {environment} from '@env/environment';
+import {GuidService} from '@ofServices/guid.service';
+import {AppState} from '@ofStore/index';
+import {Store} from '@ngrx/store';
+import {buildConfigSelector} from '@ofSelectors/config.selectors';
+import * as jwt_decode from 'jwt-decode';
+import * as _ from 'lodash';
+import {User} from '@ofModel/user.model';
+import { OidcSecurityService } from 'angular-auth-oidc-client';
 
 export enum LocalStorageAuthContent {
     token = 'token',
@@ -31,6 +32,18 @@ export const ONE_SECOND = 1000;
 
 @Injectable()
 export class AuthenticationService {
+    /**
+     * @constructor
+     * @param httpClient - Angular build-in
+     * @param guidService - create and store the unique id for this application and user
+     * @param store NGRX store
+     */
+    constructor(private httpClient: HttpClient, private guidService: GuidService,
+        private store: Store<AppState>, private oidcSecurityService: OidcSecurityService) {
+            this.store.select(buildConfigSelector('security')).subscribe(oauth2Conf => {
+                    this.assignConfigurationProperties(oauth2Conf);
+            });
+    }
 
     /** url to check authentication token (jwt) */
     private checkTokenUrl = `${environment.urls.auth}/check_token`;
@@ -44,19 +57,109 @@ export class AuthenticationService {
     private delegateUrl: string;
     private givenNameClaim: string;
     private familyNameClaim: string;
+    token: string;
+    private handleError(error: any) {
+        console.error(error);
+        return throwError(error);
+    }
+
+    moveToCodeFlowLoginPage_oidc(): void {
+        this.oidcSecurityService.authorize();
+    }
+
+    getAuthSatus_oidc(): Observable<boolean> {
+        return this.oidcSecurityService.getIsAuthorized();
+    }
+    setupAuthModule_oidc() {
+        if (this.oidcSecurityService.moduleSetup) {
+            this.onOidcModuleSetup();
+        } else {
+            this.oidcSecurityService.onModuleSetup.subscribe(() => {
+                this.onOidcModuleSetup();
+            });
+        }
+    }
+
+    private onOidcModuleSetup() {
+        if (window.location.hash) {
+            this.oidcSecurityService.authorizedImplicitFlowCallback();
+        } else {
+            // just to redirect the user after login
+            /*
+            if ('/home' !== window.location.pathname) {
+                this.write('redirect', window.location.pathname);
+            }
+            */
+            console.log('AppComponent:onModuleSetup');
+
+            this.getAuthSatus_oidc();
+        }
+    }
+    
+    /**
+     * @return true if the expiration date stored in the `localestorage` is still running, false otherwise.
+     */
+    verifyExpirationDate(): boolean {
+        // + to convert the stored number as a string back to number
+        const expirationDate = +localStorage.getItem(LocalStorageAuthContent.expirationDate);
+        const isNotANumber = isNaN(expirationDate);
+        const stillValid = isInTheFuture(expirationDate);
+        return !isNotANumber && stillValid;
+    }
 
     /**
-     * @constructor
-     * @param httpClient - Angular build-in
-     * @param guidService - create and store the unique id for this application and user
-     * @param store NGRX store
+     * @return true if the expiration date stored in the `localstorage` is over, false otherwise
      */
-    constructor(private httpClient: HttpClient, private guidService: GuidService, private store: Store<AppState>) {
-        store.select(buildConfigSelector('security'))
-            .subscribe(oauth2Conf => {
-                this.assignConfigurationProperties(oauth2Conf);
+    isExpirationDateOver(): boolean {
+        return !this.verifyExpirationDate();
+    }
 
-            });
+    /**
+     * clear the `localstorage` from all its content.
+     */
+    clearAuthenticationInformation(): void {
+        localStorage.clear();
+    }
+
+    /**
+     * save the authentication informatios such as identifier, jwt token, expiration date and clientId in the
+     * `localstorage`.
+     * @param payload
+     */
+    saveAuthenticationInformation(payload: PayloadForSuccessfulAuthentication) {
+        localStorage.setItem(LocalStorageAuthContent.identifier, payload.identifier);
+        localStorage.setItem(LocalStorageAuthContent.token, payload.token);
+        localStorage.setItem(LocalStorageAuthContent.expirationDate, payload.expirationDate.getTime().toString());
+        localStorage.setItem(LocalStorageAuthContent.clientId, payload.clientId.toString());
+    }
+
+    /**
+     * extract from the `localstorage` the authentication relevant information such as dentifier, jwt token,
+     * expiration date and clientId
+     * @return {PayloadForSuccessfulAuthentication}
+     */
+    extractIdentificationInformation(): PayloadForSuccessfulAuthentication {
+        return new PayloadForSuccessfulAuthentication(
+            localStorage.getItem(LocalStorageAuthContent.identifier),
+            Guid.parse(localStorage.getItem(LocalStorageAuthContent.clientId)),
+            localStorage.getItem(LocalStorageAuthContent.token),
+            // as getItem return a string, `+` isUsed
+            new Date(+localStorage.getItem(LocalStorageAuthContent.expirationDate)),
+        );
+    }
+
+    computeRedirectUri() {
+        const uriBase = location.origin;
+        const pathEnd = (location.pathname.length > 1) ? location.pathname : '';
+        return `${uriBase}${pathEnd}`;
+    }
+
+    decodeToken(token: string): any {
+        try {
+            return jwt_decode(token);
+        } catch (Error) {
+            return null;
+        }
     }
 
     assignConfigurationProperties(oauth2Conf) {
@@ -85,7 +188,7 @@ export class AuthenticationService {
             const headers = new HttpHeaders({'Content-type': 'application/x-www-form-urlencoded; charset=utf-8'});
             return this.httpClient.post<CheckTokenResponse>(this.checkTokenUrl, postData.toString(), {headers: headers}).pipe(
                 map(check => check),
-                catchError(AuthenticationService.handleError)
+                catchError(this.handleError)
             );
         }
         return of(null);
@@ -98,17 +201,19 @@ export class AuthenticationService {
      */
     askTokenFromCode(code: string):
         Observable<PayloadForSuccessfulAuthentication> {
-        if (!this.clientId || !this.clientSecret || !this.loginClaim)
+        if (!this.clientId || !this.clientSecret || !this.loginClaim) {
             return throwError('The authentication service is no correctly initialized');
+        }
         const params = new URLSearchParams();
         params.append('code', code);
         params.append('grant_type', 'authorization_code');
-// beware clientId for token defines a type of authentication
+        // beware clientId for token defines a type of authentication
         params.append('clientId', this.clientId);
-        params.append('redirect_uri', AuthenticationService.computeRedirectUri());
-
+        params.append('redirect_uri', this.computeRedirectUri());
         const headers = new HttpHeaders({'Content-type': 'application/x-www-form-urlencoded; charset=utf-8'});
-        return this.handleNewToken(this.httpClient.post<AuthObject>(this.askTokenUrl, params.toString(), {headers: headers}));
+        return this.handleNewToken(
+            this.httpClient.post<AuthObject>(this.askTokenUrl, params.toString(), {headers: headers})
+        );
     }
 
     /**
@@ -117,42 +222,37 @@ export class AuthenticationService {
      * @param login
      * @param password
      */
-    askTokenFromPassword(login
-                             :
-                             string, password
-                             :
-                             string
-    ):
-        Observable<any> {
-        if (!
-            this.clientId || !this.clientSecret
-        )
+    askTokenFromPassword(login: string, password: string): Observable<any> {
+        if (!this.clientId || !this.clientSecret) {
             return throwError('The authentication service is no correctly initialized');
+        }
         const params = new URLSearchParams();
         params.append('username', login);
         params.append('password', password);
         params.append('grant_type', 'password');
-// beware clientId for token defines a type of authentication
+        // beware clientId for token defines a type of authentication
         params.append('clientId', this.clientId);
         params.append('client_secret', this.clientSecret);
 
         const headers = new HttpHeaders({'Content-type': 'application/x-www-form-urlencoded; charset=utf-8'});
-        return this.handleNewToken(this.httpClient.post<AuthObject>(this.askTokenUrl, params.toString(), {headers: headers}));
+        return this.handleNewToken(
+            this.httpClient.post<AuthObject>(this.askTokenUrl, params.toString(), {headers: headers})
+        );
     }
 
     private handleNewToken(call: Observable<AuthObject>): Observable<PayloadForSuccessfulAuthentication> {
         return call.pipe(
             map(data => {
-                return {...data, clientId: this.guidService.getCurrentGuid()}
+                return {...data, clientId: this.guidService.getCurrentGuid()};
             }),
             map((auth: AuthObject) => this.convert(auth)),
-            tap(AuthenticationService.saveAuthenticationInformation),
-            catchError(AuthenticationService.handleError),
-            switchMap((auth)=>this.loadUserData(auth))
+            tap(this.saveAuthenticationInformation),
+            catchError(this.handleError),
+            switchMap((auth) => this.loadUserData(auth))
         );
     }
 
-    public loadUserData(auth:PayloadForSuccessfulAuthentication):Observable<PayloadForSuccessfulAuthentication> {
+    public loadUserData(auth: PayloadForSuccessfulAuthentication): Observable<PayloadForSuccessfulAuthentication> {
         return this.httpClient.get<User>(`${this.userDataUrl}/${auth.identifier}`)
             .pipe(
                 map(u => {
@@ -160,72 +260,26 @@ export class AuthenticationService {
                     auth.lastName = u.lastName;
                     return auth;
                 }),
-                catchError(e=>of(auth))
+                catchError(e => of(auth))
             );
-    }
-
-    private static handleError(error: any) {
-        console.error(error);
-        return throwError(error);
     }
 
     /**
      * extract the jwt authentication token from the localstorage
      */
-    static extractToken(): string {
-        return localStorage.getItem(LocalStorageAuthContent.token);
-    }
-
-    /**
-     * @return true if the expiration date stored in the `localestorage` is still running, false otherwise.
-     */
-    static verifyExpirationDate(): boolean {
-        // + to convert the stored number as a string back to number
-        const expirationDate = +localStorage.getItem(LocalStorageAuthContent.expirationDate);
-        const isNotANumber = isNaN(expirationDate);
-        const stillValid = isInTheFuture(expirationDate);
-        return !isNotANumber && stillValid;
-    }
-
-    /**
-     * @return true if the expiration date stored in the `localstorage` is over, false otherwise
-     */
-    static isExpirationDateOver(): boolean {
-        return !AuthenticationService.verifyExpirationDate();
-    }
-
-    /**
-     * clear the `localstorage` from all its content.
-     */
-    static clearAuthenticationInformation(): void {
-        localStorage.clear();
-    }
-
-    /**
-     * save the authentication informatios such as identifier, jwt token, expiration date and clientId in the
-     * `localstorage`.
-     * @param payload
-     */
-    static saveAuthenticationInformation(payload: PayloadForSuccessfulAuthentication) {
-        localStorage.setItem(LocalStorageAuthContent.identifier, payload.identifier);
-        localStorage.setItem(LocalStorageAuthContent.token, payload.token);
-        localStorage.setItem(LocalStorageAuthContent.expirationDate, payload.expirationDate.getTime().toString());
-        localStorage.setItem(LocalStorageAuthContent.clientId, payload.clientId.toString());
-    }
-
-    /**
-     * extract from the `localstorage` the authentication relevant information such as dentifier, jwt token,
-     * expiration date and clientId
-     * @return {PayloadForSuccessfulAuthentication}
-     */
-    static extractIdentificationInformation(): PayloadForSuccessfulAuthentication {
-        return new PayloadForSuccessfulAuthentication(
-            localStorage.getItem(LocalStorageAuthContent.identifier),
-            Guid.parse(localStorage.getItem(LocalStorageAuthContent.clientId)),
-            localStorage.getItem(LocalStorageAuthContent.token),
-            // as getItem return a string, `+` isUsed
-            new Date(+localStorage.getItem(LocalStorageAuthContent.expirationDate)),
-        );
+    // tslint:disable-next-line: member-ordering
+    extractToken(): string {
+        let tmp: string;
+        this.oidcSecurityService.getIsAuthorized().subscribe((isAuthorized) => {
+            console.log('*******');
+            console.log(isAuthorized);
+            if (isAuthorized) {
+                tmp = this.oidcSecurityService.getToken();
+            } else {
+                tmp = localStorage.getItem(LocalStorageAuthContent.token);
+            }
+        });
+        return tmp;
     }
 
 
@@ -238,13 +292,14 @@ export class AuthenticationService {
         PayloadForSuccessfulAuthentication {
 
         let expirationDate;
-        const jwt = AuthenticationService.decodeToken(payload.access_token);
-        if (!!payload.expires_in)
+        const jwt = this.decodeToken(payload.access_token);
+        if (!!payload.expires_in) {
             expirationDate = Date.now() + ONE_SECOND * payload.expires_in;
-        else if (!!this.expireClaim)
+        } else if (!!this.expireClaim) {
             expirationDate = jwt[this.expireClaim];
-        else
+             } else {
             expirationDate = 0;
+             }
 
         return new PayloadForSuccessfulAuthentication(jwt[this.loginClaim],
             payload.clientId,
@@ -258,32 +313,18 @@ export class AuthenticationService {
     /**
      * helper method to put the jwt token into an appropriate string usable as an http header
      */
-    static getSecurityHeader() {
-        return {'Authorization': `Bearer ${AuthenticationService.extractToken()}`};
+    getSecurityHeader() {
+        return {'Authorization': `Bearer ${this.extractToken()}`};
     }
 
     public moveToCodeFlowLoginPage() {
-        if (!this.clientId || !this.clientSecret)
+        if (!this.clientId || !this.clientSecret) {
             return throwError('The authentication service is no correctly iniitialized');
-        if(!this.delegateUrl)
-            window.location.href = `${environment.urls.auth}/code/redirect_uri=${AuthenticationService.computeRedirectUri()}`;
-        else{
-            window.location.href = `${this.delegateUrl}&redirect_uri=${AuthenticationService.computeRedirectUri()}`;
         }
-    }
-
-    static computeRedirectUri(){
-        const uriBase = location.origin;
-        const pathEnd = (location.pathname.length > 1)?location.pathname:'';
-        return `${uriBase}${pathEnd}`
-    }
-
-    static decodeToken(token: string): any {
-        try {
-            return jwt_decode(token);
-        }
-        catch (Error) {
-            return null;
+        if (!this.delegateUrl) {
+            window.location.href = `${environment.urls.auth}/code/redirect_uri=${this.computeRedirectUri()}`;
+        } else {
+            window.location.href = `${this.delegateUrl}&redirect_uri=${this.computeRedirectUri()}`;
         }
     }
 }

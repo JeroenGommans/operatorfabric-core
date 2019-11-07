@@ -11,8 +11,7 @@ import {Store} from '@ngrx/store';
 import {TryToLogIn} from '@ofActions/authentication.actions';
 import {AppState} from '@ofStore/index';
 import {buildConfigSelector} from "@ofSelectors/config.selectors";
-import {filter, map} from "rxjs/operators";
-import {Observable} from "rxjs";
+import {filter} from "rxjs/operators";
 import {AuthenticationService} from "@ofServices/authentication.service";
 import {selectMessage} from "@ofSelectors/authentication.selectors";
 import {Message, MessageLevel} from "@ofModel/message.model";
@@ -26,26 +25,35 @@ export class LoginComponent implements OnInit {
 
     hide: boolean;
     userForm: FormGroup;
-    useCodeFlow$: Observable<boolean>;
+    useCodeFlow: boolean;
     loginMessage: Message;
     // codeProvider$: Observable<any>;
     codeProvider: any;
+    isAuthorized: boolean;
+    useImplicitFlow: boolean;
     /* istanbul ignore next */
-    constructor( private store: Store<AppState>, private service: AuthenticationService) {}
+    constructor(private store: Store<AppState>, private authService: AuthenticationService) {}
 
     ngOnInit() {
-        this.useCodeFlow$ = this.store.select(buildConfigSelector('security.oauth2.flow.mode'))
-            .pipe(map(flowMode=>flowMode === 'CODE'));
-        this.store.select(selectMessage).pipe(filter(m=>m!=null && m.level==MessageLevel.ERROR))
-            .subscribe(m=>this.loginMessage=m);
-        this.store.select(buildConfigSelector('security.oauth2.flow.provider'))
-            .subscribe(provider=>this.codeProvider={name:provider});
+        this.store.select(buildConfigSelector('security.oauth2.flow.mode')).subscribe(mode => {
+            this.useCodeFlow = (mode === 'CODE');
+        });
+        this.store.select(selectMessage).pipe(filter(m => m !== null && m.level === MessageLevel.ERROR)).subscribe(m =>
+            this.loginMessage = m
+        );
+        this.store.select(buildConfigSelector('security.oauth2.flow.mode')).subscribe(mode => {
+            this.useImplicitFlow = (mode === 'IMPLICITE');
+        });
+        this.store.select(buildConfigSelector('security.oauth2.flow.provider')).subscribe(
+            provider => this.codeProvider = {name: provider}
+        );
         this.hide = true;
         this.userForm = new FormGroup({
                 identifier: new FormControl(''),
                 password: new FormControl('')
             }
         );
+        this.authService.getAuthSatus_oidc().subscribe(isAuthorized => this.isAuthorized = isAuthorized);
     }
 
     onSubmit(): void {
@@ -60,8 +68,11 @@ export class LoginComponent implements OnInit {
         this.userForm.reset();
     }
 
-    codeFlow(): void{
-        this.service.moveToCodeFlowLoginPage();
+    codeFlow(): void {
+        this.authService.moveToCodeFlowLoginPage();
     }
 
+    codeFlow_oidc(): void {
+        this.authService.moveToCodeFlowLoginPage_oidc();
+    }
 }

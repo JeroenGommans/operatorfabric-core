@@ -9,11 +9,15 @@ import {Injectable} from '@angular/core';
 import {HttpEvent, HttpHandler, HttpInterceptor, HttpRequest} from '@angular/common/http';
 import {Observable} from 'rxjs';
 import {AuthenticationService} from './authentication.service';
+import { AppState } from '@ofStore/index';
+import { Store } from '@ngrx/store';
+import { buildConfigSelector } from '@ofStore/selectors/config.selectors';
 
 @Injectable()
 export class TokenInjector implements HttpInterceptor {
-    constructor() {
-    }
+    implicitFlow: boolean;
+    constructor(private authenticationService: AuthenticationService) {
+        }
 
     /* istanbul ignore next */
     intercept(request: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
@@ -23,10 +27,9 @@ export class TokenInjector implements HttpInterceptor {
 
     addAuthHeadersIfNecessary(request: HttpRequest<any>): HttpRequest<any> {
         const url = request.url;
-
         const notCheckTokenRequest = !(url.endsWith('/auth/check_token') || url.endsWith('/auth/token') || url.endsWith('/auth/code'));
         if (notCheckTokenRequest) {
-            const update = {setHeaders: AuthenticationService.getSecurityHeader()};
+            const update = {setHeaders: this.authenticationService.getSecurityHeader()};
             request = request.clone(update);
         }
         return request;

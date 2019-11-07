@@ -36,14 +36,17 @@ export class TimeService {
     private beatDurationInMilliseconds: number;
     private timeAtLastHeartBeat: Moment;
     private timeLineFormats: any;
+    implicitFlow: boolean;
 
-    constructor(private store: Store<AppState>) {
+    constructor(private store: Store<AppState>, private authenticationService: AuthenticationService) {
         this.initializeTimeFormat();
 
         this.store.select(buildConfigSelector('time.pulse',
             this.FiveSecondsAsPulseDurationFallback))
             .subscribe(duration => this.beatDurationInMilliseconds = duration);
-
+            this.store.select(buildConfigSelector('security.oauth2.flow.mode')).subscribe((implFlow) => {
+            this.implicitFlow = (implFlow === 'IMPLICITE');
+        });
         this.timeUrl = environment.urls.time;
 
     }
@@ -103,7 +106,7 @@ export class TimeService {
     initiateTimeReference() {
         const eventSource = new EventSourcePolyfill(
             environment.urls.time,
-            {   headers: AuthenticationService.getSecurityHeader(),
+            {   headers: this.authenticationService.getSecurityHeader(),
                 heartbeatTimeout: 600000
             } as EventSourceInit);
         this.timeReference$ = this.fetchVirtualTime(eventSource);

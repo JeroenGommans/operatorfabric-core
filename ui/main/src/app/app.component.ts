@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import {AfterContentInit, AfterViewInit, Component, OnInit} from '@angular/core';
+import {Component, OnInit} from '@angular/core';
 import {select, Store} from '@ngrx/store';
 import {Observable} from 'rxjs';
 import {map} from 'rxjs/operators';
@@ -13,10 +13,12 @@ import {InitAuthStatus} from '@ofActions/authentication.actions';
 import {AppState} from '@ofStore/index';
 import {selectCurrentUrl, selectRouterState} from '@ofSelectors/router.selectors';
 import {selectExpirationTime} from '@ofSelectors/authentication.selectors';
-import {isInTheFuture} from "@ofServices/authentication.service";
+import {isInTheFuture, AuthenticationService} from "@ofServices/authentication.service";
 import {LoadConfig} from "@ofActions/config.actions";
-import {selectConfigLoaded, selectMaxedRetries} from "@ofSelectors/config.selectors";
+import {selectConfigLoaded, selectMaxedRetries, buildConfigSelector} from "@ofSelectors/config.selectors";
 import {I18nService} from "@ofServices/i18n.service";
+import { OidcSecurityService } from 'angular-auth-oidc-client';
+import { Router } from '@angular/router';
 
 @Component({
     selector: 'of-root',
@@ -28,6 +30,7 @@ export class AppComponent implements OnInit {
     getRoutePE: Observable<any>;
     currentPath: any;
     isAuthenticated$: boolean = false;
+    useCodeFlowOidc: boolean;
     configLoaded: boolean = false ;
     private maxedRetries: boolean = false;
 
@@ -36,9 +39,20 @@ export class AppComponent implements OnInit {
      * @param store
      * @param i18nService
      */
-    constructor(private store: Store<AppState>,private i18nService:I18nService) {
+    constructor(private store: Store<AppState>, private i18nService: I18nService,
+        public oidcSecurityService: OidcSecurityService, private router: Router,
+        private authService: AuthenticationService) {
         this.getRoutePE = this.store.pipe(select(selectRouterState));
+        this.store.select(buildConfigSelector('security.oauth2.flow.mode')).subscribe((mode) => {
+            if (mode === 'IMPLICITE') {
+                this.authService.setupAuthModule_oidc();
+            }
+
+            
+        });
     }
+
+    
 
     /**
      * On Init the app take trace of the current url and of the authentication status
@@ -62,6 +76,16 @@ export class AppComponent implements OnInit {
             .subscribe((maxedRetries=>this.maxedRetries=maxedRetries));
         // First Action send by the application, is the user currently authenticated ?
         this.store.dispatch(new LoadConfig());
+        this.store.select(buildConfigSelector('security.oauth2.flow.mode')).subscribe((mode) => {
+            if (mode === 'IMPLICITE') {
+                this.authService.getAuthSatus_oidc().subscribe(authorized => {
+                    this.isAuthenticated$ = authorized;
+                    if (!authorized) {
+                        this.router.navigate(['/feed']);
+                    }
+                });
+            }
+        });
     }
 
 }

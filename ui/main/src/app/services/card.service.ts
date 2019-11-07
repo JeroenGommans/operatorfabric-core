@@ -17,21 +17,26 @@ import {GuidService} from '@ofServices/guid.service';
 import {LightCard} from '@ofModel/light-card.model';
 import {Page} from '@ofModel/page.model';
 import { TimeService } from './time.service';
-
+import { AppState } from '@ofStore/index';
+import { Store } from '@ngrx/store';
+import { buildConfigSelector } from '@ofStore/selectors/config.selectors';
 @Injectable()
 export class CardService {
     readonly unsubscribe$ = new Subject<void>();
     readonly cardOperationsUrl: string;
     readonly cardsUrl: string;
     readonly archivesUrl: string;
+    implicitFlow: boolean;
 
-
-    constructor(private httpClient: HttpClient,
-        private guidService: GuidService, private timeService: TimeService) {
+    constructor(private store: Store<AppState>, private httpClient: HttpClient,
+        private guidService: GuidService, private timeService: TimeService, private authenticationService: AuthenticationService) {
         const clientId = this.guidService.getCurrentGuidString();
         this.cardOperationsUrl = `${environment.urls.cards}/cardSubscription?clientId=${clientId}`;
         this.cardsUrl = `${environment.urls.cards}/cards`;
         this.archivesUrl = `${environment.urls.cards}/archives`;
+        this.store.select(buildConfigSelector('security.oauth2.flow.mode')).subscribe((implFlow) => {
+            this.implicitFlow = (implFlow === 'IMPLICITE');
+        });
     }
 
     loadCard(id: string): Observable<Card> {
@@ -44,7 +49,7 @@ export class CardService {
         //security header needed here as SSE request are not intercepted by our header interceptor
         return this.fetchCardOperation(new EventSourcePolyfill(
             `${this.cardOperationsUrl}&notification=true&rangeStart=${minus2Hour.valueOf()}&rangeEnd=${plus48Hours.valueOf()}`
-            , {headers: AuthenticationService.getSecurityHeader(),
+            , {headers: this.authenticationService.getSecurityHeader(),
                 heartbeatTimeout: 600000}));
     }
 

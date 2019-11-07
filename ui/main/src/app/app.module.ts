@@ -6,7 +6,7 @@
  */
 
 import {BrowserModule} from '@angular/platform-browser';
-import {NgModule} from '@angular/core';
+import {NgModule, APP_INITIALIZER} from '@angular/core';
 import {BrowserAnimationsModule} from '@angular/platform-browser/animations';
 import {HttpClientModule} from '@angular/common/http';
 import {CommonModule, HashLocationStrategy, LocationStrategy} from "@angular/common";
@@ -27,6 +27,19 @@ import {faExternalLinkAlt, faSignOutAlt} from '@fortawesome/free-solid-svg-icons
 import {InfoComponent} from './components/navbar/info/info.component';
 import {UtilitiesModule} from "./modules/utilities/utilities.module";
 
+import {
+  AuthModule,
+  OidcSecurityService,
+  ConfigResult,
+  OidcConfigService,
+  OpenIdConfiguration
+} from 'angular-auth-oidc-client';
+
+export function loadConfig(oidcConfigService: OidcConfigService) {
+  console.log('APP_INITIALIZER STARTING');
+  return () => oidcConfigService.load_using_stsServer('http://localhost:89/auth/realms/dev');
+}
+
 library.add(faExternalLinkAlt);
 library.add(faSignOutAlt)
 
@@ -44,11 +57,47 @@ library.add(faSignOutAlt)
         NgbModule,
         TranslateModule.forRoot(translateConfig),
         FontAwesomeModule,
-        UtilitiesModule
+        UtilitiesModule,
+        AuthModule.forRoot()
     ],
     declarations: [AppComponent, NavbarComponent, LoginComponent, IconComponent, InfoComponent],
-    providers: [ { provide: LocationStrategy, useClass: HashLocationStrategy }],
+    providers: [ { provide: LocationStrategy, useClass: HashLocationStrategy },
+      OidcSecurityService,
+      OidcConfigService,
+      { provide: APP_INITIALIZER, useFactory: loadConfig, deps: [OidcConfigService], multi: true }
+    ],
     bootstrap: [AppComponent]
 })
 export class AppModule {
+  constructor(private oidcSecurityService: OidcSecurityService, private oidcConfigService: OidcConfigService) {
+
+    this.oidcConfigService.onConfigurationLoaded.subscribe((configResult: ConfigResult) => {
+
+        const config: OpenIdConfiguration = {
+            stsServer: 'http://localhost:89/auth/realms/dev',
+            redirect_url: 'http://localhost:4200',
+            client_id: 'opfab-client',
+            response_type: 'id_token token',
+            scope: 'openid email profile',
+            trigger_authorization_result_event: true,
+            post_logout_redirect_uri: 'http://localhost:4200/unauthorized',
+            start_checksession: false,
+            silent_renew: false,
+            silent_renew_url: 'http://localhost:4200/silent-renew.html',
+            post_login_route: '/home',
+            forbidden_route: '/forbidden',
+            unauthorized_route: '/unauthorized',
+            log_console_warning_active: true,
+            log_console_debug_active: true,
+            max_id_token_iat_offset_allowed_in_seconds: 30,
+            history_cleanup_off: true,
+            // iss_validation_off: false
+            // disable_iat_offset_validation: true
+        };
+
+        this.oidcSecurityService.setupModule(config, configResult.authWellknownEndpoints);
+    });
+
+    console.log('APP STARTING');
+  }
 }
