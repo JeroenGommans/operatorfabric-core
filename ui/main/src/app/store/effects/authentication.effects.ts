@@ -181,10 +181,20 @@ export class AuthenticationEffects {
         this.actions$
             .pipe(
                 ofType(AuthenticationActionTypes.CheckAuthenticationStatus),
-                switchMap(() => {
-                    const tmp = this.authService.extractToken();
+                //withLatestFrom(this.store.select(buildConfigSelector('security.oauth2.flow.mode'))),
+                switchMap((/*[a, b]*/) => {
+                    /*
+                    console.log(a,b);
+                    let tmp: string;
+                    if(b === "CODE") {
+                        tmp = this.authService.extractToken();
+                    }
+                    if(b === "IMPLICITE") {
+                        tmp = this.authService.extractToken1();
+                    }
                     console.log(`The token is ${tmp}`);
-                    return this.authService.checkAuthentication(tmp)
+                    */
+                    return this.authService.checkAuthentication(this.authService.extractToken())
                         .pipe(catchError(() => of(null)));
 
                 }),
