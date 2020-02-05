@@ -25,13 +25,14 @@ import {
 import {LightCard} from "@ofModel/light-card.model";
 import {Map} from "@ofModel/map";
 import * as _ from 'lodash';
-import {selectI18nUpLoaded} from "@ofSelectors/translation.selectors";
 import {ThirdsService} from "@ofServices/thirds.service";
 import {ThirdMenu} from "@ofModel/thirds.model";
 import {LoadMenuSuccess, MenuActionTypes} from "@ofActions/menu.actions";
 
 @Injectable()
 export class TranslateEffects {
+
+    
 
     constructor(private store: Store<AppState>
         , private actions$: Actions
@@ -40,6 +41,7 @@ export class TranslateEffects {
     ) {
     }
 
+    private static i18nBundleVersionLoaded = new Map<Set<string>>();
 
     @Effect()
     updateTranslateService: Observable<TranslateActions> = this.actions$
@@ -123,10 +125,7 @@ export class TranslateEffects {
         );
 
     private extractI18nToUpdate(versions: Map<Set<string>>) {
-        return this.store.select(selectI18nUpLoaded).pipe(
-            map((referencedTranslation: Map<Set<string>>) => {
-                return TranslateEffects.extractThirdToUpdate(versions, referencedTranslation)
-            }));
+            return of(TranslateEffects.extractThirdToUpdate(versions, TranslateEffects.i18nBundleVersionLoaded));
     }
 
     static extractPublisherAssociatedWithDistinctVersionsFromCards(cards: LightCard[]): Map<Set<string>> {
@@ -202,7 +201,10 @@ export class TranslateEffects {
     }
 
     static sendTranslateAction(versionToUpdate: Map<Set<string>>): TranslateActions {
-        if (versionToUpdate) return new UpdateTranslation({versions: versionToUpdate});
+        if (versionToUpdate) {
+            TranslateEffects.i18nBundleVersionLoaded = {...TranslateEffects.i18nBundleVersionLoaded, ...versionToUpdate};
+            return new UpdateTranslation({versions: versionToUpdate});
+            }
         return new TranslationUpToDate();
     }
 }
