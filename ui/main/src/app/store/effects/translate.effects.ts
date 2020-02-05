@@ -99,7 +99,7 @@ export class TranslateEffects {
         .pipe(
             ofType(TranslateActionsTypes.UpdateTranslationSuccessful)
             , map((action: UpdateTranslationSuccessful) => {
-                this.translate.use(action.payload.language);
+                this.translate.use(action.payload.language); // TO CORRECT , SHOULD TAKE the value in the store!!! 
                 return new RefreshTranslation();
             })
         );
@@ -131,7 +131,6 @@ export class TranslateEffects {
 
     static extractPublisherAssociatedWithDistinctVersionsFromCards(cards: LightCard[]): Map<Set<string>> {
         let thirdsAndVersions: TransitionalThirdWithItSVersion[];
-        // See OC-555 to avoid the infinite loop
         thirdsAndVersions = cards.map(card => {
             return new TransitionalThirdWithItSVersion(card.publisher,card.publisherVersion);
         });
@@ -153,7 +152,7 @@ export class TranslateEffects {
 
 
     static extractPublisherAssociatedWithDistinctVersionsFrom(menus: ThirdMenu[]):Map<Set<string>>{
-
+        
         const thirdsAndVersions = menus.map(menu=>{
             return new TransitionalThirdWithItSVersion(menu.id,menu.version);
         })
