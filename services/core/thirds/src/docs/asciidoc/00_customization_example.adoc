@@ -97,7 +97,7 @@ It's a description file in `json` format. It lists the content of the bundle.
           } ],
           "actions" : {
             "finish" : {
-              "type" : "URI",
+              "type" : "URL",
               "url": "http://somewher.org/simpleProcess/finish",
               "lockAction" : true,
               "lockCard" : true,
@@ -341,7 +341,7 @@ A process definition is itself a dictionary of states, each key maps to a state 
 
 ....
 {
-  "type" : "URI",
+  "type" : "URL",
   "url": "http://somewher.org/simpleProcess/finish",
   "lockAction" : true,
   "lockCard" : true,
@@ -489,7 +489,7 @@ curl -X POST "http://localhost:2100/thirds" -H  "accept: application/json" -H  "
 Where:
 
 - `$BUNDLE_FOLDER` is the folder containing the bundle archive to be uploaded.
-- `bundle-test.tar.g` is the name of the uploaded bundle.
+- `bundle-test.tar.gz` is the name of the uploaded bundle.
 
 These command line should return a `200 http status` response with the details of the content of the bundle in the response body such as :
 ....
@@ -548,7 +548,7 @@ These command line should return a `200 http status` response with the details 
             } ],
             "actions" : {
               "finish" : {
-                "type" : "URI",
+                "type" : "URL",
                 "url": "http://somewher.org/simpleProcess/finish",
                 "lockAction" : true,
                 "lockCard" : true,
