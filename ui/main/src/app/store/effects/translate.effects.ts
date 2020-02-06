@@ -101,7 +101,7 @@ export class TranslateEffects {
         .pipe(
             ofType(TranslateActionsTypes.UpdateTranslationSuccessful)
             , map((action: UpdateTranslationSuccessful) => {
-                this.translate.use(action.payload.language); // TO CORRECT , SHOULD TAKE the value in the store!!! 
+                this.translate.use(action.payload.language);
                 return new RefreshTranslation();
             })
         );
