@@ -26,13 +26,13 @@ import {LightCard} from "@ofModel/light-card.model";
 import {Map} from "@ofModel/map";
 import * as _ from 'lodash';
 import {ThirdsService} from "@ofServices/thirds.service";
+import {I18nService} from "@ofServices/i18n.service";
 import {ThirdMenu} from "@ofModel/thirds.model";
 import {LoadMenuSuccess, MenuActionTypes} from "@ofActions/menu.actions";
 
 @Injectable()
 export class TranslateEffects {
 
-    
 
     constructor(private store: Store<AppState>
         , private actions$: Actions
@@ -95,16 +95,6 @@ export class TranslateEffects {
         });
     }
 
-
-    @Effect()
-    refreshLanguageUsedByTranslation: Observable<TranslateActions> = this.actions$
-        .pipe(
-            ofType(TranslateActionsTypes.UpdateTranslationSuccessful)
-            , map((action: UpdateTranslationSuccessful) => {
-                this.translate.use(action.payload.language);
-                return new RefreshTranslation();
-            })
-        );
 
     @Effect()
     verifyTranslationNeeded: Observable<TranslateActions> = this.actions$
